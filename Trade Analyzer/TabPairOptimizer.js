@@ -570,6 +570,11 @@ function optimizeForHighWinRate(trades, psychProfile) {
 // ============================================
 
 function AllPairsOptimizer({ trades, psychProfile, T }) {
+  console.log("All columns:", Object.keys(trades[0]).sort());
+  console.log("AllPairsOptimizer trades:", trades.length);
+  console.log("First trade:", trades[0]);
+  console.log("First trade keys:", Object.keys(trades[0] || {}));
+
   const pairs = [...new Set(trades.map((t) => t._pair))];
 
   const pairResults = useMemo(() => {
