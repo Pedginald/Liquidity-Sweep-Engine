@@ -2726,6 +2726,7 @@ const TABS = [
 
 export default function App() {
   const [allTrades, setAllTrades] = useState([]);
+  console.log("Trades updated:", allTrades.length, "trades");
   const [fileNames, setFileNames] = useState([]);
   const [tab, setTab] = useState(0);
   const [tp, setTp] = useState(2.0);
@@ -2801,6 +2802,7 @@ export default function App() {
   // CSV LOAD HANDLER - Auto-import to pair profiles
   // ============================================
   useEffect(() => {
+    console.log("useEffect running, trades:", allTrades.length);
     if (allTrades.length > 0) {
       // Initialize pair profiles from localStorage
       const profiles = initPairProfiles();
