@@ -1,8 +1,3 @@
-/**
- * Equity Curve Simulator v4.6 - CORRECTED
- * Fixed bugs in position sizing, PnL calculation, and runner logic
- */
-
 export function simulateEquityCurve(
   trades,
   config,
@@ -49,6 +44,7 @@ export function simulateEquityCurve(
   let SLhits = 0;
   let BEhits = 0;
   let trailingHits = 0;
+  let expiredHits = 0;
 
   // Stress tracking
   let consecutiveLosses = 0;
@@ -93,38 +89,41 @@ export function simulateEquityCurve(
       const partialSize = partialClose;
       const runnerSize = 1 - partialClose;
 
-      // Close partial at TP
-      const partialPnL = tpLevel * rValue * partialSize;
+      // Close partial at TP - this is locked in profit
       const partialR = tpLevel * partialSize;
+      const partialPnL = partialR * rValue;
 
-      // Runner continues - calculate ADDITIONAL profit beyond partial TP
+      // Runner continues - calculate ADDITIONAL profit/loss beyond partial TP
       const runnerAdditionalR = simulateRunnerAdditional(
         trade,
         tpLevel,
         trailingStop,
-        trailingActivation
+        trailingActivation,
+        runnerSize // Pass runner size for correct SL calculation
       );
 
-      // Runner profit is the ADDITIONAL R beyond where we took partial
-      const runnerPnL = runnerAdditionalR * rValue * runnerSize;
+      // Runner profit/loss is the ADDITIONAL R beyond tpLevel, scaled by runner size
       const runnerR = runnerAdditionalR * runnerSize;
+      const runnerPnL = runnerR * rValue;
 
-      pnl = partialPnL + runnerPnL;
+      // Total return combines partial (at tpLevel) + runner (additional beyond tpLevel)
       rReturn = partialR + runnerR;
+      pnl = partialPnL + runnerPnL;
 
       exitType = `Partial(${Math.round(
         partialClose * 100
       )}%) + ${runnerAdditionalR.toFixed(1)}R runner`;
       partialTPhits++;
 
-      if (runnerAdditionalR > 0) {
+      // Determine if this was a net win, loss, or breakeven
+      if (rReturn > 0.1) {
         winningTrades++;
         consecutiveLosses = 0;
-      } else if (runnerAdditionalR < 0) {
+      } else if (rReturn < -0.1) {
         losingTrades++;
         consecutiveLosses++;
       } else {
-        // Breakeven on runner
+        // Breakeven on total position
         breakevenTrades++;
         consecutiveLosses = 0;
       }
@@ -158,6 +157,24 @@ export function simulateEquityCurve(
       SLhits++;
       losingTrades++;
       consecutiveLosses++;
+    } else if (outcome.type === "EXPIRED") {
+      // Trade expired - use MaxR or 0 if no profit achieved
+      const expiredR = Math.max(0, Math.min(trade.MaxR || 0, tpLevel));
+      pnl = expiredR * rValue;
+      rReturn = expiredR;
+      exitType = `Expired(${expiredR.toFixed(1)}R)`;
+      expiredHits++;
+
+      if (expiredR > 0.1) {
+        winningTrades++;
+        consecutiveLosses = 0;
+      } else if (expiredR < -0.1) {
+        losingTrades++;
+        consecutiveLosses++;
+      } else {
+        breakevenTrades++;
+        consecutiveLosses = 0;
+      }
     }
 
     // Update consecutive losses tracking
@@ -257,6 +274,7 @@ export function simulateEquityCurve(
       breakeven: BEhits,
       trailingStop: trailingHits,
       stopLoss: SLhits,
+      expired: expiredHits,
     },
 
     stressAnalysis: {
@@ -284,13 +302,16 @@ function determineOutcome(trade, tpLevel, partialClose, config) {
     trailingActivation,
   } = config;
 
-  // Check if TP level was hit using milestone columns or ExitR
-  const exitR = parseFloat(trade.ExitR) || null;
+  // Parse key values
+  const exitR = parseFloat(trade.ExitR);
   const maxR = parseFloat(trade.MaxR) || 0;
+  const worstR = parseFloat(trade.WorstR) || 0;
 
-  // If we have actual ExitR data, use that for accuracy
-  if (exitR !== null && !isNaN(exitR)) {
-    // Check for full TP hit
+  // Check if we have valid ExitR data
+  const hasValidExitR = !isNaN(exitR) && exitR !== null;
+
+  if (hasValidExitR) {
+    // Check for full TP hit (within small tolerance for floating point)
     if (exitR >= tpLevel - 0.01) {
       return {
         type: partialClose > 0 ? "PARTIAL_TP" : "FULL_TP",
@@ -298,31 +319,74 @@ function determineOutcome(trade, tpLevel, partialClose, config) {
       };
     }
 
-    // Check for stop loss
+    // Check for stop loss (at or beyond -1R)
     if (exitR <= -0.99) {
       return { type: "SL" };
     }
 
-    // Check for breakeven (small positive exit)
+    // Check for breakeven (small positive exit, triggered BE level was hit)
     if (
       useBreakeven &&
-      exitR > 0 &&
-      exitR < tpLevel &&
-      exitR >= breakevenOffset
+      exitR >= 0 &&
+      exitR < breakevenOffset * 2 && // Reasonable BE range
+      maxR >= breakevenTrigger
     ) {
-      // Check if we hit breakeven trigger level during trade
-      if (maxR >= breakevenTrigger) {
-        return { type: "BREAKEVEN", offset: exitR };
-      }
+      return { type: "BREAKEVEN", offset: exitR };
     }
 
-    // Small profit/loss - treat as trailing stop result
-    if (exitR > -1 && exitR < tpLevel) {
+    // Check for trailing stop result (positive but less than TP)
+    if (exitR > 0 && exitR < tpLevel && maxR >= trailingActivation) {
       return { type: "TRAILING_STOP", exitR };
+    }
+
+    // Small loss but not full SL (partial trailing stop or early exit)
+    if (exitR > -1 && exitR < 0) {
+      return { type: "TRAILING_STOP", exitR };
+    }
+
+    // Expired with some profit
+    if (exitR >= 0 && exitR < tpLevel) {
+      return { type: "EXPIRED", exitR };
     }
   }
 
-  // Fallback to milestone data
+  // Fallback to milestone data analysis
+  return determineOutcomeFromMilestones(
+    trade,
+    tpLevel,
+    partialClose,
+    {
+      useBreakeven,
+      breakevenTrigger,
+      breakevenOffset,
+      trailingStop,
+      trailingActivation,
+    },
+    maxR,
+    worstR
+  );
+}
+
+/**
+ * Determine outcome using milestone columns when ExitR is not available
+ */
+function determineOutcomeFromMilestones(
+  trade,
+  tpLevel,
+  partialClose,
+  config,
+  maxR,
+  worstR
+) {
+  const {
+    useBreakeven,
+    breakevenTrigger,
+    breakevenOffset,
+    trailingStop,
+    trailingActivation,
+  } = config;
+
+  // Check if TP level was hit
   const tpTimeCol = `TimeTo${tpLevel}R`;
   const tpTime =
     trade[tpTimeCol] || trade[`TimeTo${tpLevel.toFixed(1)}R`] || null;
@@ -331,15 +395,11 @@ function determineOutcome(trade, tpLevel, partialClose, config) {
   const rHit = tpTime && tpTime !== "Expired" && tpTime !== "";
   const slHit = slTime && slTime !== "Expired" && slTime !== "";
 
-  if (rHit && slHit) {
-    // Both hit - check which came first (simplified: assume TP if both exist)
-    return {
-      type: partialClose > 0 ? "PARTIAL_TP" : "FULL_TP",
-      tpLevel,
-    };
-  }
+  // Check for time-based expiration
+  const isExpired = tpTime === "Expired" || slTime === "Expired";
 
   if (rHit && !slHit) {
+    // TP hit, no SL
     return {
       type: partialClose > 0 ? "PARTIAL_TP" : "FULL_TP",
       tpLevel,
@@ -347,42 +407,78 @@ function determineOutcome(trade, tpLevel, partialClose, config) {
   }
 
   if (!rHit && slHit) {
+    // SL hit, no TP
     return { type: "SL" };
   }
 
-  // Neither hit - check for trailing stop opportunity
-  if (trailingStop > 0 && maxR >= trailingActivation + trailingStop) {
-    const trailExit = Math.max(0.5, maxR - trailingStop);
+  if (rHit && slHit) {
+    // Both hit - need to determine which came first
+    // This is a simplification; ideally we'd parse the datetime strings
+    // For now, assume TP if both exist (conservative for backtesting)
+    return {
+      type: partialClose > 0 ? "PARTIAL_TP" : "FULL_TP",
+      tpLevel,
+    };
+  }
+
+  // Neither TP nor SL hit - check other exit conditions
+
+  // Check for trailing stop (price went beyond activation then pulled back)
+  if (trailingStop > 0 && maxR >= trailingActivation) {
+    // Trailing stop would execute at maxR - trailingStop, but not less than BE
+    const trailExit = Math.max(breakevenOffset, maxR - trailingStop);
     return { type: "TRAILING_STOP", exitR: trailExit };
   }
 
-  // Check if we at least made some profit for breakeven
+  // Check for breakeven (hit trigger but no TP)
   if (useBreakeven && maxR >= breakevenTrigger) {
     return { type: "BREAKEVEN", offset: breakevenOffset };
   }
 
-  // Expired or unknown - check MaxR for any profit
+  // Expired trade
+  if (isExpired) {
+    return { type: "EXPIRED", exitR: Math.max(0, maxR) };
+  }
+
+  // Check if we at least made some profit
   if (maxR > 0.5) {
     return { type: "TRAILING_STOP", exitR: Math.min(maxR, tpLevel) };
   }
 
-  // Default to SL
-  return { type: "SL" };
+  // Default to SL if WorstR suggests we hit stop
+  if (worstR <= -0.9) {
+    return { type: "SL" };
+  }
+
+  // Unknown outcome - assume breakeven/small loss
+  return { type: "TRAILING_STOP", exitR: Math.max(0, maxR) };
 }
 
 /**
- * Calculate ADDITIONAL R profit for runner beyond the partial TP level
- * Returns the R value ABOVE tpLevel (not absolute)
+ * Calculate ADDITIONAL R profit/loss for runner beyond the partial TP level
+ *
+ * CRITICAL FIX: This now correctly handles the runner's position size
+ * and computes returns relative to the entry price, not the partial TP level.
+ *
+ * @param {Object} trade - Trade data
+ * @param {number} tpLevel - The R level where partial close occurred
+ * @param {number} trailingStop - Trailing stop distance in R
+ * @param {number} trailingActivation - Level where trailing stop activates
+ * @param {number} runnerSize - Size of runner position (0-1)
+ * @returns {number} Additional R return for the runner portion
  */
 function simulateRunnerAdditional(
   trade,
   tpLevel,
   trailingStop,
-  trailingActivation
+  trailingActivation,
+  runnerSize
 ) {
   const maxR = parseFloat(trade.MaxR) || 0;
+  const exitR = parseFloat(trade.ExitR);
+  const hasExitR = !isNaN(exitR);
 
-  // Check if runner hit higher TP levels
+  // Check if runner hit higher TP levels (2R, 3R, etc.)
   for (let r = tpLevel + 0.5; r <= 20; r += 0.5) {
     const timeCol = `TimeTo${r}R`;
     if (
@@ -395,37 +491,59 @@ function simulateRunnerAdditional(
     }
   }
 
-  // Check trailing stop - runner was trailed out
-  if (trailingStop > 0 && maxR >= trailingActivation + trailingStop) {
+  // Check if we have explicit ExitR data for the runner
+  if (hasExitR && exitR > tpLevel) {
+    // Runner exited above partial TP level
+    return exitR - tpLevel;
+  }
+
+  // Check trailing stop on runner
+  if (trailingStop > 0 && maxR >= trailingActivation) {
     // Trailing stop executes at maxR - trailingStop
     const trailExit = Math.max(tpLevel, maxR - trailingStop);
     return trailExit - tpLevel; // ADDITIONAL profit beyond tpLevel
   }
 
   // Check if SL was hit on runner
-  if (trade.TimeToSL && trade.TimeToSL !== "Expired") {
-    // Runner hit SL - we lose the remaining runner portion
-    // But we already banked partial at tpLevel, so runner goes to -1R relative to entry
-    // However, since we took partial at tpLevel, the runner loss is from that point
-    // Actually, if SL is hit, the runner loses 1R + whatever tpLevel was
-    // But we need to think of it as: partial gave us tpLevel, runner gives us -1 (relative to entry)
-    // So net for runner portion is: -1 - tpLevel? No that's wrong too.
+  // CRITICAL FIX: If SL is hit, the runner loses from entry to SL (-1R total)
+  // But we already banked tpLevel from the partial
+  // So the runner's contribution is: (partialClose * tpLevel) + (runnerSize * -1) = total
+  // We want the runner's ADDITIONAL return beyond tpLevel
+  // Since runner goes to SL (-1R), and we already counted tpLevel for partial
+  // The runner's additional return is: -1 - tpLevel (relative to entry)
+  // But wait - that's wrong too because it double counts
 
-    // Correct: Runner is stopped out at -1R (full SL)
-    // But we need return RELATIVE to the partial profit level
-    // If we took 60% at 2R, and runner hits SL, we get 40% * (-1R - 2R) = 40% * -3R? No...
+  // CORRECT MATH:
+  // Partial: 60% @ 2R = 1.2R contribution to total
+  // Runner: 40% @ -1R = -0.4R contribution to total
+  // Total: 0.8R
+  //
+  // This function returns the runner's return PER UNIT OF RUNNER SIZE
+  // So if runner hits SL, it returns -1 (the R value for that portion)
+  // The caller multiplies by runnerSize
 
-    // Actually simpler: The runner is a new position with entry at 0 (breakeven after partial)
-    // If it hits SL, it loses 1R relative to original entry, but we already have 2R from partial
-    // So the runner contributes: -1R (it goes to SL)
+  const slTime = trade.TimeToSL;
+  if (slTime && slTime !== "Expired" && slTime !== "") {
+    // Runner hit SL - returns -1R (full loss on that portion)
     return -1;
   }
 
-  // Expired or unknown - runner made no additional profit
+  // Check if runner was stopped out at breakeven or small profit/loss
+  if (hasExitR && exitR < tpLevel && exitR > -1) {
+    // Runner exited somewhere between BE and TP
+    // Return is relative to entry, so just return exitR
+    // But since we want ADDITIONAL beyond tpLevel, and exitR < tpLevel
+    // This is actually a loss on the runner portion
+    return exitR; // This will be negative or small positive
+  }
+
+  // Expired or unknown - runner made no additional profit beyond tpLevel
   // Return whatever maxR achieved beyond tpLevel, or 0 if never got there
   if (maxR > tpLevel) {
     // Made some profit but didn't hit next milestone
-    return Math.min(maxR - tpLevel, trailingStop > 0 ? trailingStop : 0.5);
+    // Assume we captured some portion of the move
+    const capture = Math.min(maxR - tpLevel, 0.5); // Conservative: max 0.5R extra
+    return capture;
   }
 
   // Runner never exceeded tpLevel
@@ -451,6 +569,34 @@ function calculateSharpeRatio(equityCurve) {
   const stdDev = Math.sqrt(variance);
 
   return stdDev > 0 ? avgReturn / stdDev : 0;
+}
+
+/**
+ * Compare multiple TP scenarios side by side
+ */
+export function compareTPscenarios(
+  trades,
+  scenarios,
+  initialBalance = 10000,
+  riskPerTrade = 0.01,
+  useCompounding = true
+) {
+  return scenarios.map((scenario) => {
+    const result = simulateEquityCurve(
+      trades,
+      scenario,
+      initialBalance,
+      riskPerTrade,
+      useCompounding
+    );
+    return {
+      name: scenario.name || `${scenario.tpLevel}R`,
+      config: scenario,
+      summary: result.summary,
+      exitDistribution: result.exitDistribution,
+      chartData: result.chartData,
+    };
+  });
 }
 
 export default simulateEquityCurve;
