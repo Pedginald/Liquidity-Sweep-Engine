@@ -3,6 +3,8 @@
  * Manages per-currency-pair configurations with persistence
  */
 
+import { simulateEquityCurve } from "./equitySimulator";
+
 // Default pair configurations
 const DEFAULT_PAIR_PROFILES = {
   AUDUSD: {
@@ -151,7 +153,11 @@ export function initPairProfiles() {
  */
 export function savePairProfiles(profiles) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+    console.log("Saving profiles:", Object.keys(profiles));
+    const json = JSON.stringify(profiles);
+    console.log("JSON length:", json.length);
+    localStorage.setItem(STORAGE_KEY, json);
+    console.log("Saved successfully");
     return true;
   } catch (e) {
     console.error("Failed to save pair profiles:", e);
@@ -398,30 +404,28 @@ export function optimizePairProfile(
 /**
  * Quick simulation for optimization
  */
+
 function quickSimulate(trades, config) {
-  let totalR = 0;
-  let wins = 0;
-  let maxDD = 0;
-  let peak = 0;
-  let running = 0;
-
-  for (const trade of trades) {
-    // Simplified outcome
-    const outcome = simulateOutcome(trade, config);
-    running += outcome;
-    totalR += outcome;
-
-    if (running > peak) peak = running;
-    const dd = peak - running;
-    if (dd > maxDD) maxDD = dd;
-
-    if (outcome > 0) wins++;
-  }
+  // Use the REAL simulator, not the broken approximation
+  const result = simulateEquityCurve(
+    trades,
+    {
+      tpLevel: config.tpLevel,
+      partialClose: config.partialClose,
+      trailingStop: config.trailingStop,
+      useBreakeven: true,
+      breakevenTrigger: 0.5,
+      breakevenOffset: 0.1,
+    },
+    10000, // initialBalance
+    0.01, // riskPerTrade
+    false // useCompounding (simpler for optimization)
+  );
 
   return {
-    expectancy: totalR / trades.length,
-    winRate: (wins / trades.length) * 100,
-    maxDD,
+    expectancy: result.summary.expectancy,
+    winRate: result.summary.winRate,
+    maxDD: result.summary.maxDrawdownPercent,
   };
 }
 
