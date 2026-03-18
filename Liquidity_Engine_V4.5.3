@@ -374,61 +374,76 @@ bool SpreadAcceptableForEntry()
 
 void InitProfiles()
 {
-   Print("🚀 Initializing OPTIMIZED profiles...");
+   Print("🚀 Initializing OPTIMIZED profiles v4.7 - Quick Wins Strategy");
    
-   gProfiles[0].name="USDJPY"; gProfiles[0].optimalTP=18.5; gProfiles[0].positionWeight=0.22;
-   gProfiles[0].maxHoldHours=48; gProfiles[0].requireStrongTrend=false; gProfiles[0].quickExit=false;
-   gProfiles[0].minTP=15.0; gProfiles[0].maxTP=20.0; gProfiles[0].scaleOutLevel=5.0;
-   gProfiles[0].scaleOutPercent=0.20; gProfiles[0].useScaleOut=true;
+   // === QUICK WINNERS - 1R Full Position, High Frequency ===
    
-   gProfiles[1].name="EURJPY"; gProfiles[1].optimalTP=12.0; gProfiles[1].positionWeight=0.15;
-   gProfiles[1].maxHoldHours=36; gProfiles[1].requireStrongTrend=false; gProfiles[1].quickExit=false;
-   gProfiles[1].minTP=10.0; gProfiles[1].maxTP=15.0; gProfiles[1].scaleOutLevel=3.0;
-   gProfiles[1].scaleOutPercent=0.25; gProfiles[1].useScaleOut=true;
+   gProfiles[0].name="AUDUSD"; gProfiles[0].optimalTP=1.0; gProfiles[0].positionWeight=0.12;
+   gProfiles[0].maxHoldHours=8; gProfiles[0].requireStrongTrend=false; gProfiles[0].quickExit=true;
+   gProfiles[0].minTP=0.5; gProfiles[0].maxTP=1.5; gProfiles[0].scaleOutLevel=0.0;
+   gProfiles[0].scaleOutPercent=0.0; gProfiles[0].useScaleOut=false;
    
-   gProfiles[2].name="USDCAD"; gProfiles[2].optimalTP=18.0; gProfiles[2].positionWeight=0.16;
-   gProfiles[2].maxHoldHours=48; gProfiles[2].requireStrongTrend=false; gProfiles[2].quickExit=false;
-   gProfiles[2].minTP=12.0; gProfiles[2].maxTP=20.0; gProfiles[2].scaleOutLevel=4.0;
-   gProfiles[2].scaleOutPercent=0.25; gProfiles[2].useScaleOut=true;
+   gProfiles[1].name="NZDUSD"; gProfiles[1].optimalTP=1.0; gProfiles[1].positionWeight=0.10;
+   gProfiles[1].maxHoldHours=8; gProfiles[1].requireStrongTrend=false; gProfiles[1].quickExit=true;
+   gProfiles[1].minTP=0.5; gProfiles[1].maxTP=1.5; gProfiles[1].scaleOutLevel=0.0;
+   gProfiles[1].scaleOutPercent=0.0; gProfiles[1].useScaleOut=false;
    
-   gProfiles[3].name="GBPUSD"; gProfiles[3].optimalTP=18.0; gProfiles[3].positionWeight=0.14;
-   gProfiles[3].maxHoldHours=48; gProfiles[3].requireStrongTrend=false; gProfiles[3].quickExit=false;
-   gProfiles[3].minTP=10.0; gProfiles[3].maxTP=20.0; gProfiles[3].scaleOutLevel=4.0;
-   gProfiles[3].scaleOutPercent=0.25; gProfiles[3].useScaleOut=true;
+   // === BALANCED - 1.5R Full Position, Moderate Frequency ===
    
-   gProfiles[4].name="EURUSD"; gProfiles[4].optimalTP=20.0; gProfiles[4].positionWeight=0.14;
-   gProfiles[4].maxHoldHours=48; gProfiles[4].requireStrongTrend=false; gProfiles[4].quickExit=false;
-   gProfiles[4].minTP=10.0; gProfiles[4].maxTP=20.0; gProfiles[4].scaleOutLevel=5.0;
-   gProfiles[4].scaleOutPercent=0.20; gProfiles[4].useScaleOut=true;
+   gProfiles[2].name="EURUSD"; gProfiles[2].optimalTP=1.5; gProfiles[2].positionWeight=0.15;
+   gProfiles[2].maxHoldHours=12; gProfiles[2].requireStrongTrend=false; gProfiles[2].quickExit=false;
+   gProfiles[2].minTP=1.0; gProfiles[2].maxTP=2.0; gProfiles[2].scaleOutLevel=0.0;
+   gProfiles[2].scaleOutPercent=0.0; gProfiles[2].useScaleOut=false;
    
-   gProfiles[5].name="GBPJPY"; gProfiles[5].optimalTP=16.0; gProfiles[5].positionWeight=0.10;
-   gProfiles[5].maxHoldHours=36; gProfiles[5].requireStrongTrend=false; gProfiles[5].quickExit=false;
-   gProfiles[5].minTP=8.0; gProfiles[5].maxTP=18.0; gProfiles[5].scaleOutLevel=3.0;
-   gProfiles[5].scaleOutPercent=0.30; gProfiles[5].useScaleOut=true;
+   gProfiles[3].name="USDCAD"; gProfiles[3].optimalTP=1.5; gProfiles[3].positionWeight=0.12;
+   gProfiles[3].maxHoldHours=12; gProfiles[3].requireStrongTrend=false; gProfiles[3].quickExit=false;
+   gProfiles[3].minTP=1.0; gProfiles[3].maxTP=2.0; gProfiles[3].scaleOutLevel=0.0;
+   gProfiles[3].scaleOutPercent=0.0; gProfiles[3].useScaleOut=false;
    
-   gProfiles[6].name="XAUUSD"; gProfiles[6].optimalTP=20.0; gProfiles[6].positionWeight=0.12;
-   gProfiles[6].maxHoldHours=72; gProfiles[6].requireStrongTrend=false; gProfiles[6].quickExit=false;
-   gProfiles[6].minTP=15.0; gProfiles[6].maxTP=20.0; gProfiles[6].scaleOutLevel=8.0;
-   gProfiles[6].scaleOutPercent=0.10; gProfiles[6].useScaleOut=false;
+   gProfiles[4].name="EURGBP"; gProfiles[4].optimalTP=1.5; gProfiles[4].positionWeight=0.10;
+   gProfiles[4].maxHoldHours=12; gProfiles[4].requireStrongTrend=false; gProfiles[4].quickExit=false;
+   gProfiles[4].minTP=1.0; gProfiles[4].maxTP=2.0; gProfiles[4].scaleOutLevel=0.0;
+   gProfiles[4].scaleOutPercent=0.0; gProfiles[4].useScaleOut=false;
    
-   gProfiles[7].name="AUDUSD"; gProfiles[7].optimalTP=1.0; gProfiles[7].positionWeight=0.05;
-   gProfiles[7].maxHoldHours=4; gProfiles[7].requireStrongTrend=false; gProfiles[7].quickExit=true;
-   gProfiles[7].minTP=0.5; gProfiles[7].maxTP=2.0; gProfiles[7].scaleOutLevel=0.0;
-   gProfiles[7].scaleOutPercent=0.0; gProfiles[7].useScaleOut=false;
+   // === VOLATILE/TRENDING - 2R with Partials ===
    
-   gProfiles[8].name="EURGBP"; gProfiles[8].optimalTP=20.0; gProfiles[8].positionWeight=0.10;
-   gProfiles[8].maxHoldHours=36; gProfiles[8].requireStrongTrend=false; gProfiles[8].quickExit=false;
-   gProfiles[8].minTP=8.0; gProfiles[8].maxTP=20.0; gProfiles[8].scaleOutLevel=4.0;
-   gProfiles[8].scaleOutPercent=0.25; gProfiles[8].useScaleOut=true;
+   gProfiles[5].name="USDJPY"; gProfiles[5].optimalTP=2.0; gProfiles[5].positionWeight=0.12;
+   gProfiles[5].maxHoldHours=24; gProfiles[5].requireStrongTrend=false; gProfiles[5].quickExit=false;
+   gProfiles[5].minTP=1.5; gProfiles[5].maxTP=3.0; gProfiles[5].scaleOutLevel=2.0;
+   gProfiles[5].scaleOutPercent=0.50; gProfiles[5].useScaleOut=true;
    
-   gProfiles[9].name="NZDUSD"; gProfiles[9].optimalTP=1.0; gProfiles[9].positionWeight=0.04;
-   gProfiles[9].maxHoldHours=4; gProfiles[9].requireStrongTrend=false; gProfiles[9].quickExit=true;
-   gProfiles[9].minTP=0.5; gProfiles[9].maxTP=2.0; gProfiles[9].scaleOutLevel=0.0;
-   gProfiles[9].scaleOutPercent=0.0; gProfiles[9].useScaleOut=false;
+   gProfiles[6].name="EURJPY"; gProfiles[6].optimalTP=2.0; gProfiles[6].positionWeight=0.10;
+   gProfiles[6].maxHoldHours=24; gProfiles[6].requireStrongTrend=false; gProfiles[6].quickExit=false;
+   gProfiles[6].minTP=1.5; gProfiles[6].maxTP=3.0; gProfiles[6].scaleOutLevel=2.0;
+   gProfiles[6].scaleOutPercent=0.50; gProfiles[6].useScaleOut=true;
+   
+   gProfiles[7].name="GBPUSD"; gProfiles[7].optimalTP=2.0; gProfiles[7].positionWeight=0.10;
+   gProfiles[7].maxHoldHours=24; gProfiles[7].requireStrongTrend=false; gProfiles[7].quickExit=false;
+   gProfiles[7].minTP=1.5; gProfiles[7].maxTP=3.0; gProfiles[7].scaleOutLevel=2.0;
+   gProfiles[7].scaleOutPercent=0.50; gProfiles[7].useScaleOut=true;
+   
+   // === BEAST MODE - 2.5R with Heavy Partials ===
+   
+   gProfiles[8].name="GBPJPY"; gProfiles[8].optimalTP=2.5; gProfiles[8].positionWeight=0.08;
+   gProfiles[8].maxHoldHours=24; gProfiles[8].requireStrongTrend=false; gProfiles[8].quickExit=false;
+   gProfiles[8].minTP=2.0; gProfiles[8].maxTP=4.0; gProfiles[8].scaleOutLevel=2.0;
+   gProfiles[8].scaleOutPercent=0.60; gProfiles[8].useScaleOut=true;
+   
+   // === GOLD - Special Handling ===
+   
+   gProfiles[9].name="XAUUSD"; gProfiles[9].optimalTP=3.0; gProfiles[9].positionWeight=0.08;
+   gProfiles[9].maxHoldHours=48; gProfiles[9].requireStrongTrend=false; gProfiles[9].quickExit=false;
+   gProfiles[9].minTP=2.0; gProfiles[9].maxTP=5.0; gProfiles[9].scaleOutLevel=3.0;
+   gProfiles[9].scaleOutPercent=0.50; gProfiles[9].useScaleOut=true;
    
    gProfileCount=10;
    
-   Print("✅ Profiles loaded: XAUUSD 20R no-scale, EURGBP 20R, EURUSD 20R, USDJPY 18.5R");
+   Print("✅ OPTIMIZED Profiles Loaded:");
+   Print("   🟢 Quick Wins (1R): AUDUSD, NZDUSD");
+   Print("   🟡 Balanced (1.5R): EURUSD, USDCAD, EURGBP");
+   Print("   🟠 Trending (2R+Partials): USDJPY, EURJPY, GBPUSD");
+   Print("   🔴 Beast Mode (2.5R+60%): GBPJPY");
+   Print("   ⚡ Gold (3R): XAUUSD");
 }
 
 int GetCurrentProfileIndex()
