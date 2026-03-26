@@ -223,6 +223,11 @@ struct TradeData
    double            sizeMultiplier;
    double            unrealizedPL;
    bool              breakevenActivated;  // Track if BE was triggered
+   double            beTriggerR;          // Profile BE trigger level
+   double            beOffsetR;           // Profile BE offset level
+   datetime          timeToBETrigger;     // When price first reached BE trigger
+   datetime          timeToBEStop;        // When price retraced to BE stop
+   double            exitR;              // Actual realized R-multiple
   };
 
 TradeData td;
@@ -1384,6 +1389,21 @@ void PrepareTrade()
    td.scaleOutPrice = 0;
    td.scaleOutR = 0;
    td.breakevenActivated = false;
+   td.timeToBETrigger = MILESTONE_NOT_HIT;
+   td.timeToBEStop = MILESTONE_NOT_HIT;
+   td.exitR = 0;
+
+   int beProfileIdx = GetCurrentProfileIndex();
+   if(beProfileIdx >= 0)
+     {
+      td.beTriggerR = gProfiles[beProfileIdx].beTriggerR;
+      td.beOffsetR = gProfiles[beProfileIdx].beOffsetR;
+     }
+   else
+     {
+      td.beTriggerR = 0.35;
+      td.beOffsetR = 0.1;
+     }
    td.pairName = _Symbol;
 
    if(ValidationMode && SimulatedSlippagePips > 0)
@@ -1601,8 +1621,24 @@ bool AdoptExistingTrade()
       td.scaleOutDone = false;
       td.breakevenActivated = false;
 
+      td.timeToBETrigger = MILESTONE_NOT_HIT;
+      td.timeToBEStop = MILESTONE_NOT_HIT;
+      td.exitR = 0;
+
       // Get profile settings
       int profileIdx = GetCurrentProfileIndex();
+
+      if(profileIdx >= 0)
+        {
+         td.beTriggerR = gProfiles[profileIdx].beTriggerR;
+         td.beOffsetR = gProfiles[profileIdx].beOffsetR;
+        }
+      else
+        {
+         td.beTriggerR = 0.35;
+         td.beOffsetR = 0.1;
+        }
+
       if(profileIdx >= 0)
         {
          td.targetR = gProfiles[profileIdx].optimalTP;
@@ -1628,6 +1664,7 @@ bool AdoptExistingTrade()
          if(currentSL < openPrice - beThreshold)
            {
             td.breakevenActivated = true;
+            td.timeToBETrigger = td.entry_time;  // Approximate
             Print("🔒 Detected existing BE protection on SELL (SL below entry)");
            }
         }
@@ -1969,6 +2006,23 @@ void UpdateTradeMetrics()
    if(td.timeToSL == MILESTONE_NOT_HIT && adverseR >= 1.0)
       td.timeToSL = now;
 
+// Track when BE trigger level is first reached
+   if(td.timeToBETrigger == MILESTONE_NOT_HIT && favourableR >= td.beTriggerR)
+      td.timeToBETrigger = now;
+
+// Track when price retraces to BE stop level AFTER trigger
+   if(td.timeToBETrigger != MILESTONE_NOT_HIT && td.timeToBEStop == MILESTONE_NOT_HIT)
+     {
+      double beCurrentR = 0;
+      if(td.isSell)
+         beCurrentR = (td.entry - iClose(_Symbol, _Period, 0)) / td.risk;
+      else
+         beCurrentR = (iClose(_Symbol, _Period, 0) - td.entry) / td.risk;
+
+      if(beCurrentR <= td.beOffsetR)
+         td.timeToBEStop = now;
+     }
+
    if(EnableTimeMilestones)
      {
       int minutesElapsed = (int)((now - td.entry_time) / 60);
@@ -2101,7 +2155,8 @@ bool LogTrade(string exitReason)
               "\tSweepSizePips\tSweepBodyPct\tBarsToEntry\tBarsToLevelRetouch\tEntryDistPips\tStopSizePips"
               "\tATR_H4_Pips\tATR_M5_Pips\tH4Trend\tVolRegime\tATRPercentile\tADX\tMomentumBefore\tLondonOrNY"
               "\tSlippagePips\tFillLatencyMs\tSession\tYear\tMode\tSimSlippage\tSpreadCost"
-              "\tScaleOutDone\tScaleOutR\tScaleOutPrice\tScaleOutTime\tOriginalLots\tRemainingLots";
+              "\tScaleOutDone\tScaleOutR\tScaleOutPrice\tScaleOutTime\tOriginalLots\tRemainingLots"
+              "\tBE_TriggerR\tBE_OffsetR\tExitR\tTimeToBETrigger\tTimeToBEStop";
       FileWriteString(h,header+"\n");
      }
    else
@@ -2178,6 +2233,12 @@ bool LogTrade(string exitReason)
    row+="\t"+(td.scaleOutDone?"1":"0")+"\t"+DoubleToString(td.scaleOutR,2)
         +"\t"+DoubleToString(td.scaleOutPrice,_Digits)+"\t"+MilestoneTimeStr(td.scaleOutTime)
         +"\t"+DoubleToString(td.originalLots,2)+"\t"+DoubleToString(td.remainingLots,2);
+
+   row+="\t"+DoubleToString(td.beTriggerR,2)
+        +"\t"+DoubleToString(td.beOffsetR,2)
+        +"\t"+DoubleToString(td.exitR,4)
+        +"\t"+MilestoneTimeStr(td.timeToBETrigger)
+        +"\t"+MilestoneTimeStr(td.timeToBEStop);
 
    FileWriteString(h,row+"\n");
    FileClose(h);
@@ -2326,47 +2387,178 @@ void OnTick()
          if(ValidationMode)
            {
             bool slHit = (td.timeToSL != MILESTONE_NOT_HIT);
+            bool beTriggerHit = (td.timeToBETrigger != MILESTONE_NOT_HIT);
+            bool beStopHit = (td.timeToBEStop != MILESTONE_NOT_HIT);
             double currentClose = iClose(_Symbol, _Period, 0);
             bool tpHit = td.isSell ? (currentClose <= td.tp) : (currentClose >= td.tp);
 
-            if(slHit || tpHit || td.barCount >= MaxBarsInTrade)
+            double exitPrice = 0;
+            string exitReason = "";
+
+            // Get TP hit time from milestones
+            datetime tpTime = 0;
+            for(int i = MILESTONE_COUNT - 1; i >= 0; i--)
+               if(td.timeToR[i] != MILESTONE_NOT_HIT && MilestoneR(i) >= td.targetR - 0.01)
+                 { tpTime = td.timeToR[i]; break; }
+
+            // BE stop price
+            double beStopPrice = td.isSell ? td.entry - (td.risk * td.beOffsetR)
+                                 : td.entry + (td.risk * td.beOffsetR);
+
+            datetime slTime = td.timeToSL;
+            datetime beTime = (beTriggerHit && beStopHit) ? td.timeToBEStop : 0;
+
+            // === Check TP first ===
+            if(tpTime > 0)
               {
-               string exitReason = slHit ? "SL_HIT" : tpHit ? "TP_HIT" : "EXPIRED";
-               td.exit_price = (exitReason == "SL_HIT") ? td.stop : (exitReason == "TP_HIT") ? td.tp : currentClose;
-               LogTrade(exitReason);
-               state = IDLE;
+               bool tpFirst = true;
+               if(slHit && slTime <= tpTime)
+                  tpFirst = false;
+               if(beTime > 0 && beTime <= tpTime)
+                  tpFirst = false;
+
+               if(tpFirst)
+                 {
+                  exitReason = "TP_HIT";
+                  exitPrice = td.tp;
+                  td.exitR = td.targetR;
+                 }
               }
+
+            // === Check BE stop (triggered then retraced) ===
+            if(exitReason == "" && beTriggerHit && beStopHit)
+              {
+               bool beFirst = true;
+               if(slHit && slTime <= beTime)
+                  beFirst = false;
+               if(tpTime > 0 && tpTime <= beTime)
+                  beFirst = false;
+
+               if(beFirst)
+                 {
+                  exitReason = "BE_HIT";
+                  exitPrice = beStopPrice;
+                  td.exitR = td.beOffsetR;
+                 }
+              }
+
+            // === Check full SL ===
+            if(exitReason == "" && slHit)
+              {
+               // If BE trigger was hit before SL, the BE stop would have caught it
+               if(beTriggerHit && td.timeToBETrigger < slTime)
+                 {
+                  exitReason = "BE_HIT";
+                  exitPrice = beStopPrice;
+                  td.exitR = td.beOffsetR;
+                 }
+               else
+                 {
+                  exitReason = "SL_HIT";
+                  exitPrice = td.stop;
+                  td.exitR = -1.0;
+                 }
+              }
+
+            // === Expired ===
+            if(exitReason == "" && (td.barCount >= MaxBarsInTrade || CheckMaxHoldTime()))
+              {
+               exitReason = "EXPIRED";
+               exitPrice = currentClose;
+               if(td.isSell)
+                  td.exitR = (td.entry - exitPrice) / td.risk;
+               else
+                  td.exitR = (exitPrice - td.entry) / td.risk;
+
+               // If BE was active, floor at beOffsetR
+               if(beTriggerHit)
+                  td.exitR = MathMax(td.exitR, td.beOffsetR);
+              }
+
+            // Nothing triggered yet — stay in trade
+            if(exitReason == "")
+               return;
+
+            td.exit_price = exitPrice;
+            LogTrade(exitReason);
+            state = IDLE;
+            return;
            }
          else
            {
             if(!PositionStillOpen())
               {
+               // Get actual exit price from deal history
+               double liveExitPrice = 0;
+               if(HistorySelectByPosition(td.positionID))
+                 {
+                  for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
+                    {
+                     ulong dTicket = HistoryDealGetTicket(i);
+                     if((ulong)HistoryDealGetInteger(dTicket, DEAL_POSITION_ID) == td.positionID
+                        && (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dTicket, DEAL_ENTRY) == DEAL_ENTRY_OUT)
+                       {
+                        liveExitPrice = HistoryDealGetDouble(dTicket, DEAL_PRICE);
+                        break;
+                       }
+                    }
+                 }
+
+               // Calculate realized R
+               if(liveExitPrice > 0)
+                 {
+                  if(td.isSell)
+                     td.exitR = (td.fill - liveExitPrice) / td.risk;
+                  else
+                     td.exitR = (liveExitPrice - td.fill) / td.risk;
+                 }
+
                TradeOutcome outcome = GetCloseReason();
+
                if(outcome == OUTCOME_SL)
                  {
-                  LogTrade("SL_HIT");
-                  state = IDLE;
+                  if(td.breakevenActivated)
+                    {
+                     LogTrade("BE_HIT");
+                    }
+                  else
+                    {
+                     LogTrade("SL_HIT");
+                    }
                  }
                else
                   if(outcome == OUTCOME_TP)
                     {
                      LogTrade("TP_HIT");
-                     state = IDLE;
                     }
                   else
                     {
+                     if(td.breakevenActivated && td.exitR < td.beOffsetR)
+                        td.exitR = td.beOffsetR;
                      LogTrade(GetMilestoneExitReason());
-                     state = IDLE;
                     }
+
+               state = IDLE;
+               return;
               }
-            else
-               if(td.barCount >= MaxBarsInTrade || CheckMaxHoldTime())
-                 {
-                  trade.PositionClose(td.positionID);
-                  LogTrade("EXPIRED");
-                  state = IDLE;
-                  return;
-                 }
+
+            if(td.barCount >= MaxBarsInTrade || CheckMaxHoldTime())
+              {
+               double preClosePrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+               if(td.isSell)
+                  td.exitR = (td.fill - preClosePrice) / td.risk;
+               else
+                  td.exitR = (preClosePrice - td.fill) / td.risk;
+
+               if(td.breakevenActivated)
+                  td.exitR = MathMax(td.exitR, td.beOffsetR);
+
+               trade.PositionClose(td.positionID);
+               LogTrade("EXPIRED");
+               state = IDLE;
+               return;
+              }
+            return;
            }
         }
       return;
@@ -2395,58 +2587,97 @@ void OnTick()
       if(ValidationMode)
         {
          bool slHit = (td.timeToSL != MILESTONE_NOT_HIT);
+         bool beTriggerHit = (td.timeToBETrigger != MILESTONE_NOT_HIT);
+         bool beStopHit = (td.timeToBEStop != MILESTONE_NOT_HIT);
          double currentClose = iClose(_Symbol, _Period, 0);
          bool tpHit = td.isSell ? (currentClose <= td.tp) : (currentClose >= td.tp);
 
          double exitPrice = 0;
          string exitReason = "";
 
-         if(slHit && tpHit)
-           {
-            datetime slTime = td.timeToSL;
-            datetime tpTime = 0;
-            for(int i=MILESTONE_COUNT-1; i>=0; i--)
-               if(td.timeToR[i] != MILESTONE_NOT_HIT && MilestoneR(i) >= td.targetR-0.01)
-                 { tpTime = td.timeToR[i]; break; }
+         // Get TP hit time from milestones
+         datetime tpTime = 0;
+         for(int i = MILESTONE_COUNT - 1; i >= 0; i--)
+            if(td.timeToR[i] != MILESTONE_NOT_HIT && MilestoneR(i) >= td.targetR - 0.01)
+              { tpTime = td.timeToR[i]; break; }
 
-            if(slTime <= tpTime || tpTime == 0)
-              {
-               exitReason = "SL_HIT";
-               double slippage = SimulatedSlippagePips * (StringFind(_Symbol,"JPY")>=0 ? 0.01 : 0.0001);
-               exitPrice = td.isSell ? td.stop + slippage : td.stop - slippage;
-              }
-            else
+         // BE stop price
+         double beStopPrice = td.isSell ? td.entry - (td.risk * td.beOffsetR)
+                              : td.entry + (td.risk * td.beOffsetR);
+
+         datetime slTime = td.timeToSL;
+         datetime beTime = (beTriggerHit && beStopHit) ? td.timeToBEStop : 0;
+
+         // === Check TP first ===
+         if(tpTime > 0)
+           {
+            bool tpFirst = true;
+            if(slHit && slTime <= tpTime)
+               tpFirst = false;
+            if(beTime > 0 && beTime <= tpTime)
+               tpFirst = false;
+
+            if(tpFirst)
               {
                exitReason = "TP_HIT";
-               double slippage = SimulatedSlippagePips * (StringFind(_Symbol,"JPY")>=0 ? 0.01 : 0.0001);
-               double spread = SpreadCostPips * (StringFind(_Symbol,"JPY")>=0 ? 0.01 : 0.0001);
-               exitPrice = td.isSell ? td.tp - slippage - spread : td.tp + slippage + spread;
+               exitPrice = td.tp;
+               td.exitR = td.targetR;
               }
            }
-         else
-            if(slHit)
+
+         // === Check BE stop (triggered then retraced) ===
+         if(exitReason == "" && beTriggerHit && beStopHit)
+           {
+            bool beFirst = true;
+            if(slHit && slTime <= beTime)
+               beFirst = false;
+            if(tpTime > 0 && tpTime <= beTime)
+               beFirst = false;
+
+            if(beFirst)
               {
-               exitReason = "SL_HIT";
-               double slippage = SimulatedSlippagePips * (StringFind(_Symbol,"JPY")>=0 ? 0.01 : 0.0001);
-               exitPrice = td.isSell ? td.stop + slippage : td.stop - slippage;
+               exitReason = "BE_HIT";
+               exitPrice = beStopPrice;
+               td.exitR = td.beOffsetR;
+              }
+           }
+
+         // === Check full SL ===
+         if(exitReason == "" && slHit)
+           {
+            // If BE trigger was hit before SL, the BE stop would have caught it
+            if(beTriggerHit && td.timeToBETrigger < slTime)
+              {
+               exitReason = "BE_HIT";
+               exitPrice = beStopPrice;
+               td.exitR = td.beOffsetR;
               }
             else
-               if(tpHit)
-                 {
-                  exitReason = "TP_HIT";
-                  double slippage = SimulatedSlippagePips * (StringFind(_Symbol,"JPY")>=0 ? 0.01 : 0.0001);
-                  double spread = SpreadCostPips * (StringFind(_Symbol,"JPY")>=0 ? 0.01 : 0.0001);
-                  exitPrice = td.isSell ? td.tp - slippage - spread : td.tp + slippage + spread;
-                 }
-               else
-                  if(td.barCount >= MaxBarsInTrade || CheckMaxHoldTime())
-                    {
-                     exitReason = "EXPIRED";
-                     double spread = SpreadCostPips * (StringFind(_Symbol,"JPY")>=0 ? 0.01 : 0.0001);
-                     exitPrice = td.isSell ? currentClose - spread : currentClose + spread;
-                    }
-                  else
-                     return;
+              {
+               exitReason = "SL_HIT";
+               exitPrice = td.stop;
+               td.exitR = -1.0;
+              }
+           }
+
+         // === Expired ===
+         if(exitReason == "" && (td.barCount >= MaxBarsInTrade || CheckMaxHoldTime()))
+           {
+            exitReason = "EXPIRED";
+            exitPrice = currentClose;
+            if(td.isSell)
+               td.exitR = (td.entry - exitPrice) / td.risk;
+            else
+               td.exitR = (exitPrice - td.entry) / td.risk;
+
+            // If BE was active, floor at beOffsetR
+            if(beTriggerHit)
+               td.exitR = MathMax(td.exitR, td.beOffsetR);
+           }
+
+         // Nothing triggered yet — stay in trade
+         if(exitReason == "")
+            return;
 
          td.exit_price = exitPrice;
          LogTrade(exitReason);
@@ -2457,30 +2688,71 @@ void OnTick()
         {
          if(!PositionStillOpen())
            {
+            // Get actual exit price from deal history
+            double liveExitPrice = 0;
+            if(HistorySelectByPosition(td.positionID))
+              {
+               for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
+                 {
+                  ulong dTicket = HistoryDealGetTicket(i);
+                  if((ulong)HistoryDealGetInteger(dTicket, DEAL_POSITION_ID) == td.positionID
+                     && (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dTicket, DEAL_ENTRY) == DEAL_ENTRY_OUT)
+                    {
+                     liveExitPrice = HistoryDealGetDouble(dTicket, DEAL_PRICE);
+                     break;
+                    }
+                 }
+              }
+
+            // Calculate realized R
+            if(liveExitPrice > 0)
+              {
+               if(td.isSell)
+                  td.exitR = (td.fill - liveExitPrice) / td.risk;
+               else
+                  td.exitR = (liveExitPrice - td.fill) / td.risk;
+              }
+
             TradeOutcome outcome = GetCloseReason();
+
             if(outcome == OUTCOME_SL)
               {
-               LogTrade("SL_HIT");
-               state = IDLE;
-               return;
+               if(td.breakevenActivated)
+                 {
+                  LogTrade("BE_HIT");
+                 }
+               else
+                 {
+                  LogTrade("SL_HIT");
+                 }
               }
             else
                if(outcome == OUTCOME_TP)
                  {
                   LogTrade("TP_HIT");
-                  state = IDLE;
-                  return;
                  }
                else
                  {
+                  if(td.breakevenActivated && td.exitR < td.beOffsetR)
+                     td.exitR = td.beOffsetR;
                   LogTrade(GetMilestoneExitReason());
-                  state = IDLE;
-                  return;
                  }
+
+            state = IDLE;
+            return;
            }
 
          if(td.barCount >= MaxBarsInTrade || CheckMaxHoldTime())
            {
+            double preClosePrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+            if(td.isSell)
+               td.exitR = (td.fill - preClosePrice) / td.risk;
+            else
+               td.exitR = (preClosePrice - td.fill) / td.risk;
+
+            if(td.breakevenActivated)
+               td.exitR = MathMax(td.exitR, td.beOffsetR);
+
             trade.PositionClose(td.positionID);
             LogTrade("EXPIRED");
             state = IDLE;
