@@ -228,6 +228,7 @@ struct TradeData
    datetime          timeToBETrigger;     // When price first reached BE trigger
    datetime          timeToBEStop;        // When price retraced to BE stop
    double            exitR;              // Actual realized R-multiple
+   double            maxRReached;
   };
 
 TradeData td;
@@ -581,8 +582,8 @@ void InitProfiles()
    gProfiles[1].useScaleOut      = false;
    gProfiles[1].scaleOutLevel    = 0.0;
    gProfiles[1].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[1].useBreakeven     = false;
+   gProfiles[1].beTriggerR       = 999.0;
    gProfiles[1].beOffsetR        = 0.1;
    gProfiles[1].trailingDistanceR = 0.0;
    gProfiles[1].maxSpreadPips    = 8.0;
@@ -603,8 +604,8 @@ void InitProfiles()
    gProfiles[2].useScaleOut      = false;
    gProfiles[2].scaleOutLevel    = 0.0;
    gProfiles[2].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[2].useBreakeven     = false;
+   gProfiles[2].beTriggerR       = 999.0;
    gProfiles[2].beOffsetR        = 0.1;
    gProfiles[2].trailingDistanceR = 0.0;
    gProfiles[2].maxSpreadPips    = 4.0;
@@ -621,8 +622,8 @@ void InitProfiles()
    gProfiles[3].useScaleOut      = false;
    gProfiles[3].scaleOutLevel    = 0.0;
    gProfiles[3].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[3].useBreakeven     = false;
+   gProfiles[3].beTriggerR       = 999.0;
    gProfiles[3].beOffsetR        = 0.1;
    gProfiles[3].trailingDistanceR = 0.0;
    gProfiles[3].maxSpreadPips    = 5.0;
@@ -639,8 +640,8 @@ void InitProfiles()
    gProfiles[4].useScaleOut      = false;
    gProfiles[4].scaleOutLevel    = 0.0;
    gProfiles[4].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[4].useBreakeven     = false;
+   gProfiles[4].beTriggerR       = 999.0;
    gProfiles[4].beOffsetR        = 0.1;
    gProfiles[4].trailingDistanceR = 0.0;
    gProfiles[4].maxSpreadPips    = 6.0;
@@ -661,8 +662,8 @@ void InitProfiles()
    gProfiles[5].useScaleOut      = false;
    gProfiles[5].scaleOutLevel    = 0.0;
    gProfiles[5].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[5].useBreakeven     = false;
+   gProfiles[5].beTriggerR       = 999.0;
    gProfiles[5].beOffsetR        = 0.1;
    gProfiles[5].trailingDistanceR = 0.0;
    gProfiles[5].maxSpreadPips    = 6.0;
@@ -679,8 +680,8 @@ void InitProfiles()
    gProfiles[6].useScaleOut      = false;
    gProfiles[6].scaleOutLevel    = 0.0;
    gProfiles[6].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[6].useBreakeven     = false;
+   gProfiles[6].beTriggerR       = 999.0;
    gProfiles[6].beOffsetR        = 0.1;
    gProfiles[6].trailingDistanceR = 0.0;
    gProfiles[6].maxSpreadPips    = 12.0;
@@ -697,8 +698,8 @@ void InitProfiles()
    gProfiles[7].useScaleOut      = false;
    gProfiles[7].scaleOutLevel    = 0.0;
    gProfiles[7].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[7].useBreakeven     = false;
+   gProfiles[7].beTriggerR       = 999.0;
    gProfiles[7].beOffsetR        = 0.1;
    gProfiles[7].trailingDistanceR = 0.0;
    gProfiles[7].maxSpreadPips    = 7.0;
@@ -719,8 +720,8 @@ void InitProfiles()
    gProfiles[8].useScaleOut      = false;
    gProfiles[8].scaleOutLevel    = 0.0;
    gProfiles[8].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[8].useBreakeven     = false;
+   gProfiles[8].beTriggerR       = 999.0;
    gProfiles[8].beOffsetR        = 0.1;
    gProfiles[8].trailingDistanceR = 0.0;
    gProfiles[8].maxSpreadPips    = 15.0;
@@ -737,8 +738,8 @@ void InitProfiles()
    gProfiles[9].useScaleOut      = false;
    gProfiles[9].scaleOutLevel    = 0.0;
    gProfiles[9].scaleOutPercent  = 0.0;
-   gProfiles[0].useBreakeven     = false;
-   gProfiles[0].beTriggerR       = 999.0;
+   gProfiles[9].useBreakeven     = false;
+   gProfiles[9].beTriggerR       = 999.0;
    gProfiles[9].beOffsetR        = 0.1;
    gProfiles[9].trailingDistanceR = 0.0;
    gProfiles[9].maxSpreadPips    = 35.0;
@@ -1392,6 +1393,7 @@ void PrepareTrade()
    td.timeToBETrigger = MILESTONE_NOT_HIT;
    td.timeToBEStop = MILESTONE_NOT_HIT;
    td.exitR = 0;
+   td.maxRReached = 0;
 
    int beProfileIdx = GetCurrentProfileIndex();
    if(beProfileIdx >= 0)
@@ -1980,6 +1982,15 @@ void UpdateTradeMetrics()
      }
 
    double favourableR, adverseR;
+
+//// In UpdateTradeMetrics(), add:
+//   if(td.timeToMaxR == MILESTONE_NOT_HIT)
+//     {
+//      double currentR = td.isSell ? (td.entry - iClose(_Symbol,_Period,0))/td.risk
+//                        : (iClose(_Symbol,_Period,0) - td.entry)/td.risk;
+//      td.maxR = MathMax(td.maxR, currentR);
+//     }
+
    if(td.isSell)
      {
       favourableR = (td.entry - lo) / td.risk;
@@ -1990,6 +2001,10 @@ void UpdateTradeMetrics()
       favourableR = (hi - td.entry) / td.risk;
       adverseR = (td.entry - lo) / td.risk;
      }
+
+// Track maximum R reached for post-trade analysis
+   if(favourableR > td.maxRReached)
+      td.maxRReached = favourableR;
 
    if(ValidationMode && SpreadCostPips > 0)
      {
@@ -2156,7 +2171,7 @@ bool LogTrade(string exitReason)
               "\tATR_H4_Pips\tATR_M5_Pips\tH4Trend\tVolRegime\tATRPercentile\tADX\tMomentumBefore\tLondonOrNY"
               "\tSlippagePips\tFillLatencyMs\tSession\tYear\tMode\tSimSlippage\tSpreadCost"
               "\tScaleOutDone\tScaleOutR\tScaleOutPrice\tScaleOutTime\tOriginalLots\tRemainingLots"
-              "\tBE_TriggerR\tBE_OffsetR\tExitR\tTimeToBETrigger\tTimeToBEStop";
+              "\tBE_TriggerR\tBE_OffsetR\tExitR\tTimeToBETrigger\tTimeToBEStop\tMaxRReached";
       FileWriteString(h,header+"\n");
      }
    else
@@ -2206,8 +2221,8 @@ bool LogTrade(string exitReason)
               +"\t"+DoubleToString(exitPrice,_Digits)+"\t"+exitReason
               +"\t"+IntegerToString(td.barCount);
 
-   for(int i=0;i<MILESTONE_COUNT;i++)
-      row+="\t"+MilestoneTimeStr(td.timeToR[i]);
+              for(int i=0;i<MILESTONE_COUNT;i++)
+                 row+="\t"+MilestoneTimeStr(td.timeToR[i]);
 
    row+="\t"+MilestoneTimeStr(td.timeToSL)+"\t"+MilestoneTimeStr(td.timeToFill)
         +"\t"+MilestoneTimeStr(td.timeTo30Min)+"\t"+MilestoneTimeStr(td.timeTo1H)
@@ -2238,7 +2253,8 @@ bool LogTrade(string exitReason)
         +"\t"+DoubleToString(td.beOffsetR,2)
         +"\t"+DoubleToString(td.exitR,4)
         +"\t"+MilestoneTimeStr(td.timeToBETrigger)
-        +"\t"+MilestoneTimeStr(td.timeToBEStop);
+        +"\t"+MilestoneTimeStr(td.timeToBEStop)
+        +"\t"+DoubleToString(td.maxRReached,3);
 
    FileWriteString(h,row+"\n");
    FileClose(h);
